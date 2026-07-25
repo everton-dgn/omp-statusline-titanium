@@ -15,7 +15,15 @@ two readouts the stock bar does not have: **git divergence from the remote** and
 | `path` | Full path (`~/www/ai/omp-statusline-titanium`) | Current directory only, highlighted |
 | `git` | Branch name | Branch plus dirty marker and ahead/behind against the remote (`main* ↑2 ↓1`) |
 | `context_pct` | `1.1%/1M` | `1% /1M`, colored by band — warning at 40%, error at 60% |
-| `usage` | Not rendered for MiniMax | `5h: 15% 25m │ 7d: 23% 1d25m` — plan quota with time to reset |
+| `usage` | Not rendered for MiniMax | `5h: 18% 12m │ 7d: 23% 1d12m` — plan quota with time to reset |
+
+### Live
+
+![The status line reacting to a session in progress](assets/status-line.gif)
+
+Captured from a real session, frame by frame: the quota lands a moment after start, the
+context percentage climbs as turns run, plan usage ticks from 17% to 18%, a local commit
+shows up as `main ↑1`, and the reset countdown keeps moving.
 
 Each patch keeps the original renderer behind a `Symbol.for`, so reloading the extension
 never stacks layers on top of itself.
