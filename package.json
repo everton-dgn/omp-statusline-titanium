@@ -1,0 +1,19 @@
+{
+	"name": "omp-statusline-titanium",
+	"version": "0.1.0",
+	"description": "Status line extension for omp (Oh My Pi): git divergence, MiniMax Token Plan quota and denser path/context/usage segments.",
+	"license": "MIT",
+	"author": "Éverton Toffanetto",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/everton-dgn/omp-statusline-titanium.git"
+	},
+	"keywords": ["omp", "oh-my-pi", "status-line", "extension", "minimax"],
+	"type": "module",
+	"files": ["src"],
+	"omp": {
+		"name": "omp-statusline-titanium",
+		"description": "Restyles the omp status line and adds git ahead/behind plus MiniMax Token Plan quota.",
+		"extensions": ["src/status-line-style.js"]
+	}
+}
