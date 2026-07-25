@@ -131,8 +131,13 @@ const getContextColor = percent => {
 	return "success";
 };
 
-const formatContextWindow = contextWindow =>
-	contextWindow >= 1000 ? `${Math.round(contextWindow / 1000)}K` : `${contextWindow}`;
+const formatContextWindow = contextWindow => {
+	if (contextWindow >= 1_000_000) {
+		const millions = contextWindow / 1_000_000;
+		return `${Number.isInteger(millions) ? millions : millions.toFixed(1)}M`;
+	}
+	return contextWindow >= 1000 ? `${Math.round(contextWindow / 1000)}K` : `${contextWindow}`;
+};
 
 const patchContextSegment = pi => {
 	const contextSegment = pi.pi.SEGMENTS.context_pct;
@@ -469,7 +474,7 @@ const renderUsageWindow = ({ label, percent, resetMinutes, theme }) => {
 	const reset =
 		resetMinutes === undefined ? "" : ` ${theme.fg("muted", formatResetMinutes(resetMinutes))}`;
 
-	return `${label}: ${percentage}${reset}`;
+	return `${theme.fg("text", label)}: ${percentage}${reset}`;
 };
 
 const patchUsageSegment = pi => {

@@ -13,9 +13,9 @@ two readouts the stock bar does not have: **git divergence from the remote** and
 | Segment | Stock omp | With this extension |
 |---|---|---|
 | `path` | Full path (`~/www/ai/omp-statusline-titanium`) | Current directory only, highlighted |
-| `git` | Branch name | Branch plus ahead/behind against the remote (`↑2 ↓1`) |
-| `context_pct` | `1.1%/1M` | `1% /1000K`, colored by band — warning at 40%, error at 60% |
-| `usage` | Not rendered for MiniMax | `5h: 14% 38m │ 7d: 23% 1d38m` — plan quota with time to reset |
+| `git` | Branch name | Branch plus dirty marker and ahead/behind against the remote (`main* ↑2 ↓1`) |
+| `context_pct` | `1.1%/1M` | `1% /1M`, colored by band — warning at 40%, error at 60% |
+| `usage` | Not rendered for MiniMax | `5h: 15% 25m │ 7d: 23% 1d25m` — plan quota with time to reset |
 
 Each patch keeps the original renderer behind a `Symbol.for`, so reloading the extension
 never stacks layers on top of itself.
