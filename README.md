@@ -1,61 +1,70 @@
 # omp-statusline-titanium
 
-Extensão de status line para o [omp (Oh My Pi)](https://github.com/can1357/oh-my-pi).
+Status line extension for [omp (Oh My Pi)](https://github.com/can1357/oh-my-pi).
 
-Reescreve os renderizadores dos segmentos nativos quando o tema ativo é o alvo, sem
-tocar no restante da TUI. Cada patch guarda o renderizador original em um `Symbol.for`,
-então recarregar a extensão não empilha camadas.
+It repaints the built-in status line segments while the target theme is active, and adds
+two readouts the stock bar does not have: **git divergence from the remote** and the
+**MiniMax Token Plan quota**.
 
-## O que ela adiciona
+## What it changes
 
-| Segmento | Comportamento |
-|---|---|
-| `git` | Mostra divergência com o remoto (`↑ahead` / `↓behind`), com cache de 5 s e refresh a cada 30 s |
-| `usage` | Consulta a cota do MiniMax Token Plan em `GET /v1/token_plan/remains` e colore por faixa de consumo |
-| `path` | Caminho compacto com destaque do diretório atual |
-| `context_pct` | Cor por faixa: alerta a partir de 40% e erro a partir de 60% de contexto usado |
+![Status line before and after the extension](assets/status-line.png)
 
-A leitura de cota usa `MINIMAX_API_KEY` (ou `ANTHROPIC_AUTH_TOKEN`) do ambiente e mantém
-um cache em `~/.cache/claude-statusline/minimax-quota.json`, com TTL de 60 s. Sem a
-variável definida, o segmento simplesmente não é alterado.
+| Segment | Stock omp | With this extension |
+|---|---|---|
+| `path` | Full path (`~/www/ai/omp-statusline-titanium`) | Current directory only, highlighted |
+| `git` | Branch name | Branch plus ahead/behind against the remote (`↑2 ↓1`) |
+| `context_pct` | `1.1%/1M` | `1% /1000K`, colored by band — warning at 40%, error at 60% |
+| `usage` | Not rendered for MiniMax | `5h: 14% 38m │ 7d: 23% 1d38m` — plan quota with time to reset |
 
-> A partir do omp 17.2 a cota do MiniMax Token Plan também aparece em `omp usage`
-> de forma nativa ([PR #6650](https://github.com/can1357/oh-my-pi/pull/6650)). Este
-> plugin continua útil por manter o número dentro da status line.
+Each patch keeps the original renderer behind a `Symbol.for`, so reloading the extension
+never stacks layers on top of itself.
 
-## Instalação
+## Install
 
 ```bash
 git clone https://github.com/everton-dgn/omp-statusline-titanium.git
 omp plugin link ./omp-statusline-titanium
 ```
 
-Para desinstalar: `omp plugin uninstall omp-statusline-titanium`.
+Remove it with `omp plugin uninstall omp-statusline-titanium`.
 
-## Configuração
+## Configuration
 
-Os patches só são aplicados quando o tema ativo corresponde ao alvo, que por padrão é
-o `titanium-dracula`. Para usar com outro tema:
+The patches only apply while the active theme matches the target, which defaults to
+`titanium-dracula`. Point it at your own theme with:
 
 ```bash
-export OMP_STATUSLINE_THEME="seu-tema"
+export OMP_STATUSLINE_THEME="your-theme"
 ```
 
-O tema `titanium-dracula` está sendo proposto como tema embutido do omp em
-[PR #6651](https://github.com/can1357/oh-my-pi/pull/6651). Até ser aceito, ele pode
-ser instalado copiando o JSON para `~/.omp/agent/themes/`.
+The `titanium-dracula` theme itself is proposed as a built-in omp theme in
+[PR #6651](https://github.com/can1357/oh-my-pi/pull/6651). Until it lands, drop the JSON
+into `~/.omp/agent/themes/`.
 
-## Limiares
+### MiniMax quota
 
-Definidos no topo de `src/status-line-style.js`:
+The quota readout calls `GET /v1/token_plan/remains` with `MINIMAX_API_KEY` (falling back
+to `ANTHROPIC_AUTH_TOKEN`) and caches the answer in
+`~/.cache/claude-statusline/minimax-quota.json` for 60 seconds. With neither variable set,
+the usage segment is left untouched.
 
-| Constante | Padrão |
+> A pull request teaching `omp usage` to report the same quota natively is open upstream
+> ([PR #6650](https://github.com/can1357/oh-my-pi/pull/6650)). Even once it lands, this
+> extension keeps the number in the status line instead of behind a separate command.
+
+## Thresholds
+
+Declared at the top of `src/status-line-style.js`:
+
+| Constant | Default |
 |---|---|
-| `BRANCH_MAX_LENGTH` | 18 caracteres |
+| `BRANCH_MAX_LENGTH` | 18 characters |
 | `CONTEXT_WARNING_THRESHOLD` / `CONTEXT_ERROR_THRESHOLD` | 40% / 60% |
 | `USAGE_WARNING_THRESHOLD` / `USAGE_ERROR_THRESHOLD` | 70% / 85% |
 | `MINIMAX_REFRESH_TTL_MS` | 60 s |
+| `GIT_DIVERGENCE_REFRESH_INTERVAL_MS` | 30 s |
 
-## Licença
+## License
 
 MIT
