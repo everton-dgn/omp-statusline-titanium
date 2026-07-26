@@ -55,9 +55,17 @@ The patches only apply while the active theme matches the target, which defaults
 export OMP_STATUSLINE_THEME="your-theme"
 ```
 
-The `titanium-dracula` theme itself is proposed as a built-in omp theme in
-[PR #6651](https://github.com/can1357/oh-my-pi/pull/6651). Until it lands, drop the JSON
-into `~/.omp/agent/themes/`.
+The `titanium-dracula` theme lives in
+[everton-dgn/omp-theme-titanium-dracula](https://github.com/everton-dgn/omp-theme-titanium-dracula)
+and is also proposed as a built-in omp theme in
+[PR #6651](https://github.com/can1357/oh-my-pi/pull/6651):
+
+```bash
+mkdir -p ~/.omp/agent/themes
+curl -fsSL -o ~/.omp/agent/themes/titanium-dracula.json \
+  https://raw.githubusercontent.com/everton-dgn/omp-theme-titanium-dracula/main/titanium-dracula.json
+omp config set theme.dark titanium-dracula
+```
 
 ### MiniMax quota
 
