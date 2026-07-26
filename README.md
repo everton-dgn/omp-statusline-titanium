@@ -11,15 +11,20 @@ two readouts the stock bar does not have: **git divergence from the remote** and
 ![Status line before and after the extension](assets/status-line.png)
 
 The top row is omp straight after installation: default `titanium` theme, `unicode` symbol
-preset and the `default` status line. The bottom row is the same session with this
-extension loaded on top of the `titanium-dracula` theme and the `nerd` preset.
+preset and the `default` status line, after a couple of turns so the cost segment has
+something to show. The bottom row is the same session with this extension loaded on top of
+the `titanium-dracula` theme and the `nerd` preset.
+
+Which segments appear is a `statusLine` setting, not something the extension decides — it
+restyles the segments you already enabled and fills the usage one for MiniMax plans.
 
 | Segment | omp as installed | With this extension |
 |---|---|---|
 | `path` | Full path behind a folder glyph | Current directory only, highlighted |
 | `git` | Branch name | Branch plus dirty marker and ahead/behind against the remote (`main* ↑2 ↓1`) |
-| `context_pct` | `3.8%/1M` | `4% /1M`, colored by band — warning at 40%, error at 60% |
+| `context_pct` | `4.5%/1M` | `4% /1M`, colored by band — warning at 40%, error at 60% |
 | `usage` | Not rendered for MiniMax | `5h: 18% 2m │ 7d: 23% 1d2m` — plan quota with time to reset |
+| `cost` | `$0.02` for the session | Untouched — dropped from the bottom row by configuration, not by this extension |
 
 ### Live
 
