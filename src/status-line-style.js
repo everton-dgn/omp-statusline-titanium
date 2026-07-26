@@ -519,8 +519,11 @@ const patchUsageSegment = pi => {
 			);
 		}
 
+		const theme = pi.pi.theme;
+		const separator = theme.fg("muted", ` ${(theme.sep?.pipe ?? "│").trim()} `);
+
 		return {
-			content: parts.join(" | "),
+			content: parts.join(separator),
 			visible: parts.length > 0,
 		};
 	};
