@@ -23,7 +23,7 @@ restyles the segments you already enabled and fills the usage one for MiniMax pl
 | `path` | Full path behind a folder glyph | Current directory only, highlighted |
 | `git` | Branch name | Branch plus dirty marker and ahead/behind against the remote (`main* ↑2 ↓1`) |
 | `context_pct` | `4.5%/1M` | `4% /1M`, colored by band — warning at 40%, error at 60% |
-| `usage` | Not rendered for MiniMax | `5h: 18% 2m │ 7d: 23% 1d2m` — plan quota with time to reset |
+| `usage` | Not rendered for MiniMax | `4h: 3% 1h35m │ 7d: 29% 1h35m` — plan quota with time to reset |
 | `cost` | `$0.02` for the session | Untouched — dropped from the bottom row by configuration, not by this extension |
 
 ### Live
@@ -69,14 +69,18 @@ omp config set theme.dark titanium-dracula
 
 ### MiniMax quota
 
-The quota readout calls `GET /v1/token_plan/remains` with `MINIMAX_API_KEY` (falling back
-to `ANTHROPIC_AUTH_TOKEN`) and caches the answer in
-`~/.cache/claude-statusline/minimax-quota.json` for 60 seconds. With neither variable set,
-the usage segment is left untouched.
+`omp usage` reports the MiniMax Token Plan quota natively since 17.1.4
+([PR #6650](https://github.com/can1357/oh-my-pi/pull/6650)), so the readout reuses those
+reports instead of calling the endpoint itself: it reads `AuthStorage.fetchUsageReports()`
+through `ctx.modelRegistry`, keeps the plan-wide (`shared`) buckets of the `minimax-code`
+provider, and renders the rolling and weekly windows. Credentials, caching and retries stay
+with omp.
 
-> A pull request teaching `omp usage` to report the same quota natively is open upstream
-> ([PR #6650](https://github.com/can1357/oh-my-pi/pull/6650)). Even once it lands, this
-> extension keeps the number in the status line instead of behind a separate command.
+The status line still needs the extension for it. Core keys the segment on the active
+model's provider (`minimax` for `minimax/MiniMax-M3`) while the report arrives under
+`minimax-code`, and it only maps the `5h` and `7d` window ids — MiniMax reports the span it
+actually rolls on (`4h` here), so the rolling window has no native slot. With no MiniMax
+report available, the segment falls back to whatever core provides.
 
 ## Thresholds
 
@@ -87,7 +91,7 @@ Declared at the top of `src/status-line-style.js`:
 | `BRANCH_MAX_LENGTH` | 18 characters |
 | `CONTEXT_WARNING_THRESHOLD` / `CONTEXT_ERROR_THRESHOLD` | 40% / 60% |
 | `USAGE_WARNING_THRESHOLD` / `USAGE_ERROR_THRESHOLD` | 70% / 85% |
-| `MINIMAX_REFRESH_TTL_MS` | 60 s |
+| `MINIMAX_REFRESH_INTERVAL_MS` | 60 s |
 | `GIT_DIVERGENCE_REFRESH_INTERVAL_MS` | 30 s |
 
 ## License

@@ -1,7 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename } from "node:path";
 import { promisify } from "node:util";
 
 const TARGET_THEME = process.env.OMP_STATUSLINE_THEME ?? "titanium-dracula";
@@ -15,9 +13,8 @@ const ORIGINAL_GIT_RENDER = Symbol.for("omp.status-line-style.original-git-rende
 const ORIGINAL_CONTEXT_RENDER = Symbol.for("omp.context-window-style.original-render");
 const ORIGINAL_USAGE_RENDER = Symbol.for("omp.status-line-style.original-usage-render");
 const MINIMAX_PROVIDER = "minimax";
-const MINIMAX_REFRESH_URL = "https://api.minimax.io/v1/token_plan/remains";
-const MINIMAX_CACHE_PATH = join(homedir(), ".cache", "claude-statusline", "minimax-quota.json");
-const MINIMAX_REFRESH_TTL_MS = 60_000;
+const MINIMAX_USAGE_PROVIDER = "minimax-code";
+const MINIMAX_WEEKLY_WINDOW_ID = "7d";
 const MINIMAX_REFRESH_INTERVAL_MS = 60_000;
 const MINIMAX_REQUEST_TIMEOUT_MS = 4_000;
 const MINIMAX_RENDER_STATUS_KEY = "minimax-quota-refresh";
@@ -222,111 +219,74 @@ const getResetMinutes = (resetTimestamp, now) => {
 	return Math.max(0, Math.round((timestamp - now) / 60_000));
 };
 
-const getUsedPercent = remainingPercent => {
-	const remaining = Number(remainingPercent);
+const toUsageWindow = (limit, now) => {
+	const usedFraction = Number(limit?.amount?.usedFraction);
+	const label = limit?.scope?.windowId ?? limit?.window?.id;
 
-	if (!Number.isFinite(remaining)) {
+	if (!Number.isFinite(usedFraction) || !label) {
 		return undefined;
 	}
 
-	return Math.min(100, Math.max(0, 100 - remaining));
+	return {
+		label,
+		percent: Math.min(100, Math.max(0, usedFraction * 100)),
+		resetMinutes: getResetMinutes(limit.window?.resetsAt, now),
+	};
 };
 
-const parseMinimaxUsage = (payload, now = Date.now()) => {
-	if (!payload || typeof payload !== "object" || !Array.isArray(payload.model_remains)) {
+const parseMinimaxReports = (reports, now = Date.now()) => {
+	if (!Array.isArray(reports)) {
 		return null;
 	}
 
-	const general = payload.model_remains.find(model => model?.model_name === "general");
+	let rolling;
+	let weekly;
 
-	if (!general) {
+	for (const report of reports) {
+		if (report?.provider !== MINIMAX_USAGE_PROVIDER || !Array.isArray(report.limits)) {
+			continue;
+		}
+
+		for (const limit of report.limits) {
+			if (limit?.scope?.shared !== true) {
+				continue;
+			}
+
+			const usageWindow = toUsageWindow(limit, now);
+
+			if (!usageWindow) {
+				continue;
+			}
+
+			if (usageWindow.label === MINIMAX_WEEKLY_WINDOW_ID) {
+				weekly ??= usageWindow;
+			} else {
+				rolling ??= usageWindow;
+			}
+		}
+	}
+
+	if (!rolling && !weekly) {
 		return null;
 	}
 
-	const fiveHourPercent = getUsedPercent(general.current_interval_remaining_percent);
-	const sevenDayPercent = getUsedPercent(general.current_weekly_remaining_percent);
-	const fiveHour =
-		fiveHourPercent === undefined
-			? undefined
-			: {
-					percent: fiveHourPercent,
-					resetMinutes: getResetMinutes(general.end_time, now),
-				};
-	const sevenDay =
-		sevenDayPercent === undefined
-			? undefined
-			: {
-					percent: sevenDayPercent,
-					resetMinutes: getResetMinutes(general.weekly_end_time, now),
-				};
-
-	if (!fiveHour && !sevenDay) {
-		return null;
-	}
-
-	return { fiveHour, sevenDay };
+	return { rolling, weekly };
 };
 
-const readMinimaxCache = async () => {
+const fetchNativeUsageReports = async ctx => {
+	const authStorage = ctx.modelRegistry?.authStorage;
+
+	if (typeof authStorage?.fetchUsageReports !== "function") {
+		return null;
+	}
+
 	try {
-		const [content, metadata] = await Promise.all([
-			readFile(MINIMAX_CACHE_PATH, "utf8"),
-			stat(MINIMAX_CACHE_PATH),
-		]);
-
-		return {
-			age: Math.max(0, Date.now() - metadata.mtimeMs),
-			payload: JSON.parse(content),
-		};
+		return await authStorage.fetchUsageReports({
+			signal: AbortSignal.timeout(MINIMAX_REQUEST_TIMEOUT_MS),
+		});
 	} catch {
 		return null;
 	}
-};
-
-const writeMinimaxCache = async payload => {
-	await mkdir(dirname(MINIMAX_CACHE_PATH), { recursive: true });
-
-	const temporaryPath = `${MINIMAX_CACHE_PATH}.${process.pid}.${Date.now()}.tmp`;
-
-	try {
-		await writeFile(temporaryPath, JSON.stringify(payload), {
-			encoding: "utf8",
-			mode: 0o600,
-		});
-		await rename(temporaryPath, MINIMAX_CACHE_PATH);
-	} finally {
-		await rm(temporaryPath, { force: true });
-	}
-};
-
-const fetchMinimaxQuota = async () => {
-	const apiKey = process.env.MINIMAX_API_KEY ?? process.env.ANTHROPIC_AUTH_TOKEN;
-
-	if (!apiKey) {
-		return null;
-	}
-
-	const response = await fetch(MINIMAX_REFRESH_URL, {
-		headers: {
-			Authorization: `Bearer ${apiKey}`,
-			"Content-Type": "application/json",
-		},
-		signal: AbortSignal.timeout(MINIMAX_REQUEST_TIMEOUT_MS),
-	});
-
-	if (!response.ok) {
-		return null;
-	}
-
-	const payload = await response.json();
-
-	if (Number(payload?.base_resp?.status_code) !== 0) {
-		return null;
-	}
-
-	await writeMinimaxCache(payload);
-
-	return payload;
 };
 
 const requestStatusLineRender = ctx => {
@@ -346,23 +306,10 @@ const refreshMinimaxUsage = async ctx => {
 	}
 
 	minimaxRefreshPromise = (async () => {
-		const cached = await readMinimaxCache();
-		const cachedUsage = cached ? parseMinimaxUsage(cached.payload) : null;
+		const usage = parseMinimaxReports(await fetchNativeUsageReports(ctx));
 
-		if (cachedUsage) {
-			minimaxUsage = cachedUsage;
-			requestStatusLineRender(ctx);
-		}
-
-		if (cached && cached.age < MINIMAX_REFRESH_TTL_MS) {
-			return;
-		}
-
-		const payload = await fetchMinimaxQuota();
-		const refreshedUsage = parseMinimaxUsage(payload);
-
-		if (refreshedUsage) {
-			minimaxUsage = refreshedUsage;
+		if (usage) {
+			minimaxUsage = usage;
 			requestStatusLineRender(ctx);
 		}
 	})();
@@ -477,6 +424,35 @@ const renderUsageWindow = ({ label, percent, resetMinutes, theme }) => {
 	return `${theme.fg("text", label)}: ${percentage}${reset}`;
 };
 
+const toNativeUsageWindows = usage => {
+	const rolling = usage?.fiveHour
+		? { label: "5h", percent: usage.fiveHour.percent, resetMinutes: usage.fiveHour.resetMinutes }
+		: undefined;
+	const weekly = usage?.sevenDay
+		? {
+				label: "7d",
+				percent: usage.sevenDay.percent,
+				resetMinutes:
+					usage.sevenDay.resetMinutes ??
+					(usage.sevenDay.resetHours === undefined ? undefined : usage.sevenDay.resetHours * 60),
+			}
+		: undefined;
+
+	if (!rolling && !weekly) {
+		return null;
+	}
+
+	return { rolling, weekly };
+};
+
+const getUsageWindows = ctx => {
+	if (isMinimaxProvider(getRenderedProvider(ctx)) && minimaxUsage) {
+		return minimaxUsage;
+	}
+
+	return toNativeUsageWindows(ctx.usage);
+};
+
 const patchUsageSegment = pi => {
 	const usageSegment = pi.pi.SEGMENTS.usage;
 	const originalRender = getOriginalRender(usageSegment, ORIGINAL_USAGE_RENDER);
@@ -486,40 +462,16 @@ const patchUsageSegment = pi => {
 			return originalRender.call(usageSegment, ctx);
 		}
 
-		const provider = getRenderedProvider(ctx);
-		const usage = isMinimaxProvider(provider) ? (minimaxUsage ?? ctx.usage) : ctx.usage;
+		const windows = getUsageWindows(ctx);
 
-		if (!usage || (!usage.fiveHour && !usage.sevenDay)) {
+		if (!windows) {
 			return { content: "", visible: false };
 		}
 
-		const parts = [];
-
-		if (usage.fiveHour) {
-			parts.push(
-				renderUsageWindow({
-					label: "5h",
-					percent: usage.fiveHour.percent,
-					resetMinutes: usage.fiveHour.resetMinutes,
-					theme: pi.pi.theme,
-				}),
-			);
-		}
-
-		if (usage.sevenDay) {
-			parts.push(
-				renderUsageWindow({
-					label: "7d",
-					percent: usage.sevenDay.percent,
-					resetMinutes:
-						usage.sevenDay.resetMinutes ??
-						(usage.sevenDay.resetHours === undefined ? undefined : usage.sevenDay.resetHours * 60),
-					theme: pi.pi.theme,
-				}),
-			);
-		}
-
 		const theme = pi.pi.theme;
+		const parts = [windows.rolling, windows.weekly]
+			.filter(Boolean)
+			.map(usageWindow => renderUsageWindow({ ...usageWindow, theme }));
 		const separator = theme.fg("muted", ` ${(theme.sep?.pipe ?? "│").trim()} `);
 
 		return {
