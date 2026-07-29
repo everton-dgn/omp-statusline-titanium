@@ -10,6 +10,9 @@ const USAGE_ERROR_THRESHOLD = 85;
 const USAGE_WARNING_THRESHOLD = 70;
 const ORIGINAL_PATH_RENDER = Symbol.for("omp.status-line-style.original-path-render");
 const ORIGINAL_GIT_RENDER = Symbol.for("omp.status-line-style.original-git-render");
+const ORIGINAL_MODEL_RENDER = Symbol.for("omp.status-line-style.original-model-render");
+const ORIGINAL_MODE_RENDER = Symbol.for("omp.status-line-style.original-mode-render");
+const ORIGINAL_STATUS_LINE_BORDER = Symbol.for("omp.status-line-style.original-status-line-border");
 const ORIGINAL_CONTEXT_RENDER = Symbol.for("omp.context-window-style.original-render");
 const ORIGINAL_USAGE_RENDER = Symbol.for("omp.status-line-style.original-usage-render");
 const MINIMAX_PROVIDER = "minimax";
@@ -18,6 +21,7 @@ const MINIMAX_WEEKLY_WINDOW_ID = "7d";
 const MINIMAX_REFRESH_INTERVAL_MS = 60_000;
 const MINIMAX_REQUEST_TIMEOUT_MS = 4_000;
 const MINIMAX_RENDER_STATUS_KEY = "minimax-quota-refresh";
+const VIBE_ICON = "\uf0c0";
 const GIT_DIVERGENCE_REFRESH_INTERVAL_MS = 30_000;
 const GIT_DIVERGENCE_TTL_MS = 5_000;
 const GIT_COMMAND_TIMEOUT_MS = 2_000;
@@ -113,6 +117,63 @@ const patchGitSegment = pi => {
 		}
 
 		return originalRender.call(gitSegment, ctx);
+	};
+};
+
+const trimVisibleStart = value => {
+	const visible = Bun.stripANSI(value);
+	const trimmed = visible.trimStart();
+
+	if (trimmed.length === visible.length) {
+		return value;
+	}
+
+	const leading = visible.slice(0, visible.length - trimmed.length);
+	const index = value.indexOf(leading);
+	return index === -1 ? value : value.slice(0, index) + value.slice(index + leading.length);
+};
+
+const patchModelSegment = pi => {
+	const modelSegment = pi.pi.SEGMENTS.model;
+	const originalRender = getOriginalRender(modelSegment, ORIGINAL_MODEL_RENDER);
+
+	modelSegment.render = ctx => {
+		const rendered = originalRender.call(modelSegment, ctx);
+
+		if (!isTargetTheme(pi) || !rendered.visible || !ctx.session.isFastModeActive()) {
+			return rendered;
+		}
+
+		const fastIcon = pi.pi.theme.icon.fast;
+		const fastIconIndex = fastIcon ? rendered.content.lastIndexOf(fastIcon) : -1;
+
+		if (fastIconIndex === -1) {
+			return rendered;
+		}
+
+		const suffixStart = fastIconIndex + fastIcon.length;
+		return {
+			...rendered,
+			content: rendered.content.slice(0, suffixStart) + trimVisibleStart(rendered.content.slice(suffixStart)),
+		};
+	};
+};
+
+const patchModeSegment = pi => {
+	const modeSegment = pi.pi.SEGMENTS.mode;
+	const originalRender = getOriginalRender(modeSegment, ORIGINAL_MODE_RENDER);
+
+	modeSegment.render = ctx => {
+		const rendered = originalRender.call(modeSegment, ctx);
+
+		if (!isTargetTheme(pi) || !ctx.vibeMode?.enabled || pi.pi.theme.icon.agents) {
+			return rendered;
+		}
+
+		return {
+			content: pi.pi.theme.fg("accent", `${VIBE_ICON} Vibe`),
+			visible: true,
+		};
 	};
 };
 
@@ -481,11 +542,66 @@ const patchUsageSegment = pi => {
 	};
 };
 
+const patchCounterBadges = pi => {
+	const prototype = pi.pi.StatusLineComponent?.prototype;
+
+	if (!prototype?.getTopBorder) {
+		return;
+	}
+
+	if (!prototype[ORIGINAL_STATUS_LINE_BORDER]) {
+		Object.defineProperty(prototype, ORIGINAL_STATUS_LINE_BORDER, {
+			value: prototype.getTopBorder,
+		});
+	}
+
+	const originalGetTopBorder = prototype[ORIGINAL_STATUS_LINE_BORDER];
+	prototype.getTopBorder = function (width) {
+		if (!isTargetTheme(pi)) {
+			return originalGetTopBorder.call(this, width);
+		}
+
+		const session = this.session;
+		const subagentCount = this.subagentCount;
+		const getAsyncJobSnapshot = session?.getAsyncJobSnapshot;
+		const snapshotDescriptor = session
+			? Object.getOwnPropertyDescriptor(session, "getAsyncJobSnapshot")
+			: undefined;
+
+		this.setSubagentCount(0);
+		if (session && typeof getAsyncJobSnapshot === "function") {
+			Object.defineProperty(session, "getAsyncJobSnapshot", {
+				configurable: true,
+				value: () => {
+					const snapshot = getAsyncJobSnapshot.call(session);
+					return snapshot?.running.length ? { ...snapshot, running: [] } : snapshot;
+				},
+			});
+		}
+
+		try {
+			return originalGetTopBorder.call(this, width);
+		} finally {
+			this.setSubagentCount(subagentCount);
+			if (session && typeof getAsyncJobSnapshot === "function") {
+				if (snapshotDescriptor) {
+					Object.defineProperty(session, "getAsyncJobSnapshot", snapshotDescriptor);
+				} else {
+					delete session.getAsyncJobSnapshot;
+				}
+			}
+		}
+	};
+};
+
 export default function statusLineStyle(pi) {
 	registerMinimaxUsage(pi);
 	registerGitDivergence(pi);
 	patchPathSegment(pi);
 	patchGitSegment(pi);
+	patchModelSegment(pi);
+	patchModeSegment(pi);
 	patchContextSegment(pi);
 	patchUsageSegment(pi);
+	patchCounterBadges(pi);
 }
