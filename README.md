@@ -3,8 +3,8 @@
 Status line extension for [omp (Oh My Pi)](https://github.com/can1357/oh-my-pi).
 
 It repaints the built-in status line segments while the target theme is active, adds
-**git divergence from the remote** and the **MiniMax Token Plan quota**, tightens the Fast
-indicator/effort pair, and removes the injected background-job and agent counters.
+**git divergence from the remote** and the **MiniMax Token Plan quota**, preserves one space
+between the Fast indicator and effort, and removes the injected background-job and agent counters.
 
 ## What it changes
 
@@ -25,7 +25,7 @@ the two live counters that core injects outside that list while the target theme
 | `context_pct` | `4.5%/1M` | `4% /1M`, colored by band — warning at 40%, error at 60% |
 | `usage` | Not rendered for MiniMax | `4h: 3% 1h35m │ 7d: 29% 1h35m` — plan quota with time to reset |
 | `cost` | `$0.02` for the session | Untouched — dropped from the bottom row by configuration, not by this extension |
-| `model` | Fast and effort can leave an extra visual gap | One-column Fast glyph joined directly to the effort label |
+| `model` | Fast and effort can leave an extra visual gap | One-column Fast glyph with exactly one space before the effort label |
 | Live counters | Background-job/agent number plus a right-side separator | Hidden, including the now-empty group and separator |
 
 ### Live

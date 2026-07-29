@@ -10,7 +10,6 @@ const USAGE_ERROR_THRESHOLD = 85;
 const USAGE_WARNING_THRESHOLD = 70;
 const ORIGINAL_PATH_RENDER = Symbol.for("omp.status-line-style.original-path-render");
 const ORIGINAL_GIT_RENDER = Symbol.for("omp.status-line-style.original-git-render");
-const ORIGINAL_MODEL_RENDER = Symbol.for("omp.status-line-style.original-model-render");
 const ORIGINAL_MODE_RENDER = Symbol.for("omp.status-line-style.original-mode-render");
 const ORIGINAL_STATUS_LINE_BORDER = Symbol.for("omp.status-line-style.original-status-line-border");
 const ORIGINAL_CONTEXT_RENDER = Symbol.for("omp.context-window-style.original-render");
@@ -84,7 +83,7 @@ const patchPathSegment = pi => {
 
 		const isDirty = isGitDirty(ctx.git.status);
 		const branch = `${truncateBranch(ctx.git.branch)}${isDirty ? "*" : ""}`;
-		const color = isDirty ? "statusLineGitDirty" : "statusLineGitClean";
+		const color = "accent";
 		const divergence = getDivergenceFor(cwd);
 		const worktreeName = ctx.worktree?.worktreeName;
 		const worktreeTag = worktreeName ? `@${worktreeName}` : "";
@@ -117,45 +116,6 @@ const patchGitSegment = pi => {
 		}
 
 		return originalRender.call(gitSegment, ctx);
-	};
-};
-
-const trimVisibleStart = value => {
-	const visible = Bun.stripANSI(value);
-	const trimmed = visible.trimStart();
-
-	if (trimmed.length === visible.length) {
-		return value;
-	}
-
-	const leading = visible.slice(0, visible.length - trimmed.length);
-	const index = value.indexOf(leading);
-	return index === -1 ? value : value.slice(0, index) + value.slice(index + leading.length);
-};
-
-const patchModelSegment = pi => {
-	const modelSegment = pi.pi.SEGMENTS.model;
-	const originalRender = getOriginalRender(modelSegment, ORIGINAL_MODEL_RENDER);
-
-	modelSegment.render = ctx => {
-		const rendered = originalRender.call(modelSegment, ctx);
-
-		if (!isTargetTheme(pi) || !rendered.visible || !ctx.session.isFastModeActive()) {
-			return rendered;
-		}
-
-		const fastIcon = pi.pi.theme.icon.fast;
-		const fastIconIndex = fastIcon ? rendered.content.lastIndexOf(fastIcon) : -1;
-
-		if (fastIconIndex === -1) {
-			return rendered;
-		}
-
-		const suffixStart = fastIconIndex + fastIcon.length;
-		return {
-			...rendered,
-			content: rendered.content.slice(0, suffixStart) + trimVisibleStart(rendered.content.slice(suffixStart)),
-		};
 	};
 };
 
@@ -599,7 +559,6 @@ export default function statusLineStyle(pi) {
 	registerGitDivergence(pi);
 	patchPathSegment(pi);
 	patchGitSegment(pi);
-	patchModelSegment(pi);
 	patchModeSegment(pi);
 	patchContextSegment(pi);
 	patchUsageSegment(pi);
