@@ -2,9 +2,9 @@
 
 Status line extension for [omp (Oh My Pi)](https://github.com/can1357/oh-my-pi).
 
-It repaints the built-in status line segments while the target theme is active, and adds
-two readouts the stock bar does not have: **git divergence from the remote** and the
-**MiniMax Token Plan quota**.
+It repaints the built-in status line segments while the target theme is active, adds
+**git divergence from the remote** and the **MiniMax Token Plan quota**, preserves one space
+between the Fast indicator and effort, and removes the injected background-job and agent counters.
 
 ## What it changes
 
@@ -15,8 +15,8 @@ preset and the `default` status line, after a couple of turns so the cost segmen
 something to show. The bottom row is the same session with this extension loaded on top of
 the `titanium-dracula` theme and the `nerd` preset.
 
-Which segments appear is a `statusLine` setting, not something the extension decides — it
-restyles the segments you already enabled and fills the usage one for MiniMax plans.
+Which regular segments appear remains a `statusLine` setting. The extension only suppresses
+the two live counters that core injects outside that list while the target theme is active.
 
 | Segment | omp as installed | With this extension |
 |---|---|---|
@@ -25,6 +25,8 @@ restyles the segments you already enabled and fills the usage one for MiniMax pl
 | `context_pct` | `4.5%/1M` | `4% /1M`, colored by band — warning at 40%, error at 60% |
 | `usage` | Not rendered for MiniMax | `4h: 3% 1h35m │ 7d: 29% 1h35m` — plan quota with time to reset |
 | `cost` | `$0.02` for the session | Untouched — dropped from the bottom row by configuration, not by this extension |
+| `model` | Fast and effort can leave an extra visual gap | One-column Fast glyph with exactly one space before the effort label |
+| Live counters | Background-job/agent number plus a right-side separator | Hidden, including the now-empty group and separator |
 
 ### Live
 
