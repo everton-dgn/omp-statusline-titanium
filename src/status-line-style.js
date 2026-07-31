@@ -17,16 +17,20 @@ const ORIGINAL_USAGE_RENDER = Symbol.for("omp.status-line-style.original-usage-r
 const MINIMAX_PROVIDER = "minimax";
 const MINIMAX_USAGE_PROVIDER = "minimax-code";
 const MINIMAX_WEEKLY_WINDOW_ID = "7d";
-const MINIMAX_REFRESH_INTERVAL_MS = 60_000;
-const MINIMAX_REQUEST_TIMEOUT_MS = 4_000;
-const MINIMAX_RENDER_STATUS_KEY = "minimax-quota-refresh";
+const KIMI_PROVIDER = "kimi-code";
+const KIMI_FIVE_HOUR_WINDOW_MS = 5 * 60 * 60 * 1000;
+const KIMI_TOTAL_QUOTA_LABEL = "Total quota";
+const USAGE_REFRESH_INTERVAL_MS = 60_000;
+const USAGE_REQUEST_TIMEOUT_MS = 4_000;
+const USAGE_RENDER_STATUS_KEY = "provider-quota-refresh";
 const VIBE_ICON = "\uf0c0";
 const GIT_DIVERGENCE_REFRESH_INTERVAL_MS = 30_000;
 const GIT_DIVERGENCE_TTL_MS = 5_000;
 const GIT_COMMAND_TIMEOUT_MS = 2_000;
 
 let minimaxUsage = null;
-let minimaxRefreshPromise = null;
+let kimiUsage = null;
+let usageRefreshPromise = null;
 let gitDivergence = null;
 let gitDivergencePromise = null;
 let gitDivergenceCheckedAt = 0;
@@ -217,7 +221,7 @@ const formatResetMinutes = totalMinutes => {
 		parts.push(`${hours}h`);
 	}
 
-	if (minutes > 0 || parts.length === 0) {
+	if (parts.length < 2 && (minutes > 0 || parts.length === 0)) {
 		parts.push(`${minutes}m`);
 	}
 
@@ -225,6 +229,8 @@ const formatResetMinutes = totalMinutes => {
 };
 
 const isMinimaxProvider = provider => provider === MINIMAX_PROVIDER;
+
+const isKimiProvider = provider => provider === KIMI_PROVIDER;
 
 const getRenderedProvider = ctx => ctx.session.state.model?.provider ?? ctx.session.model?.provider;
 
@@ -240,9 +246,8 @@ const getResetMinutes = (resetTimestamp, now) => {
 	return Math.max(0, Math.round((timestamp - now) / 60_000));
 };
 
-const toUsageWindow = (limit, now) => {
+const toUsageWindow = (limit, now, label = limit?.scope?.windowId ?? limit?.window?.id) => {
 	const usedFraction = Number(limit?.amount?.usedFraction);
-	const label = limit?.scope?.windowId ?? limit?.window?.id;
 
 	if (!Number.isFinite(usedFraction) || !label) {
 		return undefined;
@@ -294,6 +299,51 @@ const parseMinimaxReports = (reports, now = Date.now()) => {
 	return { rolling, weekly };
 };
 
+const parseKimiReports = (reports, now = Date.now()) => {
+	if (!Array.isArray(reports)) {
+		return null;
+	}
+
+	let rolling;
+	let weekly;
+
+	for (const report of reports) {
+		if (report?.provider !== KIMI_PROVIDER || !Array.isArray(report.limits)) {
+			continue;
+		}
+
+		for (const limit of report.limits) {
+			if (limit?.scope?.shared !== true) {
+				continue;
+			}
+
+			const windowId = limit.scope?.windowId ?? limit.window?.id;
+			const durationMs = Number(limit.window?.durationMs);
+
+			if (
+				!rolling &&
+				(windowId === "5h" ||
+					(Number.isFinite(durationMs) && durationMs === KIMI_FIVE_HOUR_WINDOW_MS))
+			) {
+				rolling = toUsageWindow(limit, now, "5h");
+			}
+
+			if (
+				!weekly &&
+				(windowId === "7d" || (windowId === "default" && limit.label === KIMI_TOTAL_QUOTA_LABEL))
+			) {
+				weekly = toUsageWindow(limit, now, "7d");
+			}
+		}
+	}
+
+	if (!rolling && !weekly) {
+		return null;
+	}
+
+	return { rolling, weekly };
+};
+
 const fetchNativeUsageReports = async ctx => {
 	const authStorage = ctx.modelRegistry?.authStorage;
 
@@ -303,7 +353,7 @@ const fetchNativeUsageReports = async ctx => {
 
 	try {
 		return await authStorage.fetchUsageReports({
-			signal: AbortSignal.timeout(MINIMAX_REQUEST_TIMEOUT_MS),
+			signal: AbortSignal.timeout(USAGE_REQUEST_TIMEOUT_MS),
 		});
 	} catch {
 		return null;
@@ -312,48 +362,59 @@ const fetchNativeUsageReports = async ctx => {
 
 const requestStatusLineRender = ctx => {
 	if (ctx.hasUI) {
-		ctx.ui.setStatus(MINIMAX_RENDER_STATUS_KEY, undefined);
+		ctx.ui.setStatus(USAGE_RENDER_STATUS_KEY, undefined);
 	}
 };
 
-const refreshMinimaxUsage = async ctx => {
-	if (!isMinimaxProvider(getRuntimeProvider(ctx))) {
+const refreshProviderUsage = async ctx => {
+	const provider = getRuntimeProvider(ctx);
+	const parseReports = isMinimaxProvider(provider)
+		? parseMinimaxReports
+		: isKimiProvider(provider)
+			? parseKimiReports
+			: null;
+
+	if (!parseReports) {
 		return;
 	}
 
-	if (minimaxRefreshPromise) {
-		await minimaxRefreshPromise;
+	if (usageRefreshPromise) {
+		await usageRefreshPromise;
 		return;
 	}
 
-	minimaxRefreshPromise = (async () => {
-		const usage = parseMinimaxReports(await fetchNativeUsageReports(ctx));
+	usageRefreshPromise = (async () => {
+		const usage = parseReports(await fetchNativeUsageReports(ctx));
 
 		if (usage) {
-			minimaxUsage = usage;
+			if (isMinimaxProvider(provider)) {
+				minimaxUsage = usage;
+			} else {
+				kimiUsage = usage;
+			}
 			requestStatusLineRender(ctx);
 		}
 	})();
 
 	try {
-		await minimaxRefreshPromise;
+		await usageRefreshPromise;
 	} finally {
-		minimaxRefreshPromise = null;
+		usageRefreshPromise = null;
 	}
 };
 
-const scheduleMinimaxRefresh = ctx => {
-	ctx.setTimeout(() => refreshMinimaxUsage(ctx), 0);
+const scheduleProviderUsageRefresh = ctx => {
+	ctx.setTimeout(() => refreshProviderUsage(ctx), 0);
 };
 
-const registerMinimaxUsage = pi => {
+const registerProviderUsage = pi => {
 	pi.on("session_start", (_event, ctx) => {
-		scheduleMinimaxRefresh(ctx);
-		ctx.setInterval(() => refreshMinimaxUsage(ctx), MINIMAX_REFRESH_INTERVAL_MS);
+		scheduleProviderUsageRefresh(ctx);
+		ctx.setInterval(() => refreshProviderUsage(ctx), USAGE_REFRESH_INTERVAL_MS);
 	});
 
 	pi.on("turn_start", (_event, ctx) => {
-		scheduleMinimaxRefresh(ctx);
+		scheduleProviderUsageRefresh(ctx);
 	});
 };
 
@@ -471,6 +532,10 @@ const getUsageWindows = ctx => {
 		return minimaxUsage;
 	}
 
+	if (isKimiProvider(getRenderedProvider(ctx)) && kimiUsage) {
+		return kimiUsage;
+	}
+
 	return toNativeUsageWindows(ctx.usage);
 };
 
@@ -555,7 +620,7 @@ const patchCounterBadges = pi => {
 };
 
 export default function statusLineStyle(pi) {
-	registerMinimaxUsage(pi);
+	registerProviderUsage(pi);
 	registerGitDivergence(pi);
 	patchPathSegment(pi);
 	patchGitSegment(pi);

@@ -3,8 +3,8 @@
 Status line extension for [omp (Oh My Pi)](https://github.com/can1357/oh-my-pi).
 
 It repaints the built-in status line segments while the target theme is active, adds
-**git divergence from the remote** and the **MiniMax Token Plan quota**, preserves one space
-between the Fast indicator and effort, and removes the injected background-job and agent counters.
+**git divergence from the remote** plus **MiniMax Token Plan and Kimi Code quota windows**,
+preserves one space between the Fast indicator and effort, and removes the injected counters.
 
 ## What it changes
 
@@ -23,7 +23,7 @@ the two live counters that core injects outside that list while the target theme
 | `path` | Full path behind a folder glyph | Current directory only, highlighted |
 | `git` | Branch name | Branch plus dirty marker and ahead/behind against the remote (`main* ↑2 ↓1`) |
 | `context_pct` | `4.5%/1M` | `4% /1M`, colored by band — warning at 40%, error at 60% |
-| `usage` | Not rendered for MiniMax | `4h: 3% 1h35m │ 7d: 29% 1h35m` — plan quota with time to reset |
+| `usage` | Missing for MiniMax and non-canonical Kimi windows | `5h: 3% 1h35m │ 7d: 29% 1h35m` — plan quota with time to reset |
 | `cost` | `$0.02` for the session | Untouched — dropped from the bottom row by configuration, not by this extension |
 | `model` | Fast and effort can leave an extra visual gap | One-column Fast glyph with exactly one space before the effort label |
 | Live counters | Background-job/agent number plus a right-side separator | Hidden, including the now-empty group and separator |
@@ -69,20 +69,20 @@ curl -fsSL -o ~/.omp/agent/themes/titanium-dracula.json \
 omp config set theme.dark titanium-dracula
 ```
 
-### MiniMax quota
+### Provider quotas
 
-`omp usage` reports the MiniMax Token Plan quota natively since 17.1.4
-([PR #6650](https://github.com/can1357/oh-my-pi/pull/6650)), so the readout reuses those
-reports instead of calling the endpoint itself: it reads `AuthStorage.fetchUsageReports()`
-through `ctx.modelRegistry`, keeps the plan-wide (`shared`) buckets of the `minimax-code`
-provider, and renders the rolling and weekly windows. Credentials, caching and retries stay
-with omp.
+`omp usage` reports MiniMax Token Plan and Kimi Code quotas natively. The readout reuses
+those reports instead of calling provider endpoints itself: it reads
+`AuthStorage.fetchUsageReports()` through `ctx.modelRegistry`, keeps shared buckets, and
+renders the rolling and weekly windows. Credentials, caching, and retries stay with omp.
 
-The status line still needs the extension for it. Core keys the segment on the active
-model's provider (`minimax` for `minimax/MiniMax-M3`) while the report arrives under
-`minimax-code`, and it only maps the `5h` and `7d` window ids — MiniMax reports the span it
-actually rolls on (`4h` here), so the rolling window has no native slot. With no MiniMax
-report available, the segment falls back to whatever core provides.
+MiniMax still needs the extension because core keys the segment on the active model provider
+(`minimax`) while the report arrives under `minimax-code`; the rolling span may also be `4h`
+instead of a native `5h` slot.
+
+Kimi Code reports its five-hour window as `300time_unit_minute` and its total quota as
+`default`. The extension normalizes those two limits to `5h` and `7d` before rendering.
+Reset countdowns render at most two units (`6d21h`, `2h18m`, or `22m`) to keep the segment compact.
 
 ## Thresholds
 
